@@ -5,9 +5,9 @@ A small native Kotlin Android companion app for Your Bizarre Adventure (Roblox).
 ## Features
 - Dark-themed home screen and settings
 - Detects whether the Roblox Android app is installed
-- Opens the official YBA experience page (place ID `2809202155`) using Roblox's Android app link handling
+- Uses Roblox deep link `roblox://experiences/start?placeId=2809202155` to request joining the YBA experience (rather than opening only the website page)
 - Optional Usage Access-based foreground-app check.
-- Optional foreground-service auto-return mode: after Roblox was observed in the foreground, if it stays away for about 12 seconds, the app makes one best-effort attempt to reopen the YBA link and exposes a notification tap as a fallback. Duplicate launches are suppressed until Roblox is observed foreground again.
+- Optional foreground-service auto-return mode: after Roblox was observed in the foreground, if it stays away for about 12 seconds, the app makes one best-effort attempt to request launching into the YBA experience via a Roblox deep link and exposes a notification tap as a fallback. Duplicate launches are suppressed until Roblox is observed foreground again.
 - Android may block activity launches from the background and can stop services; auto-return is best-effort, not guaranteed. This cannot reliably confirm the exact Roblox sub-place.
 
 ## Build locally

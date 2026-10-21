@@ -19,7 +19,8 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
     private val robloxPackage = "com.roblox.client"
-    private val ybaUrl = "https://www.roblox.com/games/2809202155/Your-Bizarre-Adventure"
+    private val ybaDeepLink = "roblox://experiences/start?placeId=2809202155"
+    private val ybaWebUrl = "https://www.roblox.com/games/2809202155/Your-Bizarre-Adventure"
     private lateinit var robloxStatus: TextView
     private lateinit var ybaStatus: TextView
     private lateinit var usageStatus: TextView
@@ -139,13 +140,15 @@ class MainActivity : Activity() {
             return
         }
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(ybaUrl)).apply {
+            // Roblox deep link requests an experience launch, not just its website page.
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(ybaDeepLink)).apply {
                 setPackage(robloxPackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
         } catch (_: Exception) {
-            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ybaUrl))) }
+            // Fallback for Roblox versions that do not handle this deep-link format.
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ybaWebUrl))) }
             catch (_: Exception) { Toast.makeText(this, "Не удалось открыть YBA", Toast.LENGTH_LONG).show() }
         }
     }

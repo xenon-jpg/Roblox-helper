@@ -24,7 +24,8 @@ class AutoReturnService : Service() {
         private const val CHANNEL_ID = "yba_auto_return"
         private const val NOTIFICATION_ID = 2401
         private const val ROBLOX = "com.roblox.client"
-        private const val YBA_URL = "https://www.roblox.com/games/2809202155/Your-Bizarre-Adventure"
+        private const val YBA_DEEP_LINK = "roblox://experiences/start?placeId=2809202155"
+        private const val YBA_WEB_URL = "https://www.roblox.com/games/2809202155/Your-Bizarre-Adventure"
 
         fun isEnabled(context: Context): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
@@ -132,21 +133,21 @@ class AutoReturnService : Service() {
     }
 
     private fun tryOpenRoblox() {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(YBA_URL)).apply {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(YBA_DEEP_LINK)).apply {
             setPackage(ROBLOX)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         try {
             startActivity(intent)
         } catch (_: Exception) {
-            // Android may block background activity launches. The persistent notification
-            // still provides a user-initiated PendingIntent to reopen Roblox.
-            updateNotification("Автозапуск ограничен Android • нажмите, чтобы вернуться")
+            // Android may block background activity launches. Do not open a browser page
+            // automatically; ask the user to tap the persistent notification instead.
+            updateNotification("Автозапуск ограничен Android • нажмите, чтобы войти в YBA")
         }
     }
 
     private fun buildNotification(message: String): Notification {
-        val returnIntent = Intent(Intent.ACTION_VIEW, Uri.parse(YBA_URL)).apply {
+        val returnIntent = Intent(Intent.ACTION_VIEW, Uri.parse(YBA_DEEP_LINK)).apply {
             setPackage(ROBLOX)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
