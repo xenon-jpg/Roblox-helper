@@ -10,7 +10,6 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
-import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -24,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var robloxStatus: TextView
     private lateinit var ybaStatus: TextView
     private lateinit var usageStatus: TextView
+    private lateinit var autoReturnButton: Button
     private lateinit var root: LinearLayout
     private var autoRefresh = true
 
@@ -60,42 +60,81 @@ class MainActivity : Activity() {
         card.addView(robloxStatus, marginParams(0, 12, 0, 8))
         ybaStatus = text("YBA: не подтверждена", 16f, Color.LTGRAY, false)
         card.addView(ybaStatus, matchWrap())
-        usageStatus = text("Фоновая проверка: требует разрешения Usage Access", 12f, Color.GRAY, false)
+        usageStatus = text("Для автоповтора нужен доступ к статистике использования", 12f, Color.GRAY, false)
         card.addView(usageStatus, marginParams(0, 12, 0, 0))
 
-        val launch = button("▶   ЗАПУСТИТЬ YBA") { launchYba() }
-        root.addView(launch, marginParams(0, 0, 0, 10))
+        root.addView(button("▶   ЗАПУСТИТЬ YBA") { launchYba() }, marginParams(0, 0, 0, 10))
         root.addView(button("↻   ОБНОВИТЬ СТАТУС") { refreshStatus() }, marginParams(0, 0, 0, 22))
 
         root.addView(text("НАСТРОЙКИ", 13f, Color.rgb(167,139,250), true), marginParams(0, 0, 0, 10))
         root.addView(button("Разрешить проверку активности") { openUsageAccess() }, marginParams(0, 0, 0, 10))
-        root.addView(button("Автообновление: ВКЛ") {
+
+        autoReturnButton = button("Автовозврат Roblox: ВЫКЛ") {
+            if (!hasUsageAccess()) {
+                Toast.makeText(this, "Сначала разрешите доступ к статистике использования", Toast.LENGTH_LONG).show()
+                openUsageAccess()
+            } else {
+                if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 3001)
+                    Toast.makeText(this, "Разрешите уведомления, затем нажмите переключатель ещё раз", Toast.LENGTH_LONG).show()
+                    return@button
+                }
+                val enabled = !AutoReturnService.isEnabled(this)
+                getSharedPreferences("yba_helper_settings", MODE_PRIVATE).edit()
+                    .putBoolean("auto_return_enabled", enabled).apply()
+                val serviceIntent = Intent(this, AutoReturnService::class.java).apply {
+                    action = if (enabled) AutoReturnService.ACTION_START else AutoReturnService.ACTION_STOP
+                }
+                if (enabled) {
+                    if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent) else startService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+                updateAutoReturnButton()
+                Toast.makeText(this, if (enabled) "Автовозврат включён" else "Автовозврат выключен", Toast.LENGTH_SHORT).show()
+            }
+        }
+        root.addView(autoReturnButton, marginParams(0, 0, 0, 10))
+        root.addView(button("Автообновление статуса: ВКЛ") {
             autoRefresh = !autoRefresh
-            (it as Button).text = if (autoRefresh) "Автообновление: ВКЛ" else "Автообновление: ВЫКЛ"
+            (it as Button).text = if (autoRefresh) "Автообновление статуса: ВКЛ" else "Автообновление статуса: ВЫКЛ"
             refreshStatus()
         }, marginParams(0, 0, 0, 10))
-        root.addView(text("Примечание: Android ограничивает работу приложений в фоне. Определение конкретного плейса зависит от доступности статистики использования; приложение не управляет Roblox изнутри.", 12f, Color.GRAY, false), marginParams(2, 12, 2, 0))
+        root.addView(text("Автовозврат проверяет передний план примерно каждые 3 секунды. Если Roblox не активен 12 секунд, помощник пытается открыть его один раз и ждёт подтверждения, прежде чем пробовать снова. Android может блокировать запуск приложения из фона; в таком случае используйте уведомление «Вернуться в Roblox».", 12f, Color.GRAY, false), marginParams(2, 12, 2, 0))
     }
 
-    private fun refreshStatus() {
-        val installed = try { packageManager.getPackageInfo(robloxPackage, 0); true } catch (_: Exception) { false }
-        robloxStatus.text = if (installed) "● Roblox установлен" else "● Roblox не найден"
-        robloxStatus.setTextColor(if (installed) Color.rgb(74, 222, 128) else Color.rgb(248, 113, 113))
-        val allowed = hasUsageAccess()
-        usageStatus.text = if (allowed) "Проверка активности: разрешена" else "Проверка активности: разрешите Usage Access в настройках"
-        if (allowed && installed) {
-            val foreground = isRobloxForeground()
-            ybaStatus.text = if (foreground) "Roblox активен • YBA не подтверждена" else "YBA: Roblox сейчас не на переднем плане"
-        } else if (!installed) {
-            ybaStatus.text = "Установите Roblox, чтобы запускать YBA"
-        } else {
-            ybaStatus.text = "YBA: включите разрешение для проверки активности"
+    private fun updateAutoReturnButton() {
+        if (::autoReturnButton.isInitialized) {
+            autoReturnButton.text = if (AutoReturnService.isEnabled(this)) "Автовозврат Roblox: ВКЛ" else "Автовозврат Roblox: ВЫКЛ"
         }
     }
 
+    private fun refreshStatus() {
+        val installed = isRobloxInstalled()
+        robloxStatus.text = if (installed) "● Roblox установлен" else "● Roblox не найден"
+        robloxStatus.setTextColor(if (installed) Color.rgb(74, 222, 128) else Color.rgb(248, 113, 113))
+        val allowed = hasUsageAccess()
+        usageStatus.text = when {
+            !allowed -> "Проверка активности: разрешите Usage Access в настройках"
+            AutoReturnService.isEnabled(this) -> "Автовозврат включён • задержка 12 секунд"
+            else -> "Проверка активности разрешена • автовозврат выключен"
+        }
+        if (allowed && installed) {
+            ybaStatus.text = if (isRobloxForeground()) "Roblox активен • YBA не подтверждена" else "Roblox сейчас не на переднем плане"
+        } else if (!installed) {
+            ybaStatus.text = "Установите Roblox, чтобы запускать YBA"
+        } else {
+            ybaStatus.text = "Включите разрешение для проверки активности"
+        }
+        updateAutoReturnButton()
+    }
+
+    private fun isRobloxInstalled(): Boolean =
+        try { packageManager.getPackageInfo(robloxPackage, 0); true } catch (_: Exception) { false }
+
     private fun launchYba() {
-        val installed = try { packageManager.getPackageInfo(robloxPackage, 0); true } catch (_: Exception) { false }
-        if (!installed) {
+        if (!isRobloxInstalled()) {
             Toast.makeText(this, "Сначала установите Roblox", Toast.LENGTH_LONG).show()
             return
         }
@@ -127,26 +166,32 @@ class MainActivity : Activity() {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
-    private fun isRobloxForeground(): Boolean {
+    private fun isRobloxForeground(): Boolean = currentForegroundPackage() == robloxPackage
+
+    private fun currentForegroundPackage(): String? {
         return try {
             val manager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val end = System.currentTimeMillis()
             val events = manager.queryEvents(end - 60_000, end)
             val event = android.app.usage.UsageEvents.Event()
-            var latestPackage = ""
+            var latestPackage: String? = null
             var latestTime = 0L
             while (events.hasNextEvent()) {
                 events.getNextEvent(event)
-                if ((event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED || event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) && event.timeStamp >= latestTime) {
+                if ((event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED ||
+                    event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) && event.timeStamp >= latestTime) {
                     latestTime = event.timeStamp
                     latestPackage = event.packageName
                 }
             }
-            latestPackage == robloxPackage
-        } catch (_: Exception) { false }
+            latestPackage
+        } catch (_: Exception) { null }
     }
 
-    override fun onResume() { super.onResume(); if (::root.isInitialized && autoRefresh) refreshStatus() }
+    override fun onResume() {
+        super.onResume()
+        if (::root.isInitialized && autoRefresh) refreshStatus()
+    }
 
     private fun text(value: String, size: Float, color: Int, bold: Boolean) = TextView(this).apply {
         text = value; textSize = size; setTextColor(color); if (bold) setTypeface(typeface, Typeface.BOLD)
